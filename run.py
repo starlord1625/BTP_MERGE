@@ -7,6 +7,8 @@ from tqdm.auto import tqdm
 from evaluation import calc_crps, RMSE
 import matplotlib.pyplot as plt
 import numpy as np
+import torch.nn as nn
+import Utils
 
 def main():
     argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -20,19 +22,36 @@ def main():
 
     # network structure
     argparser.add_argument('--h_dim', default=200,
-                           help='dimension for ts/event encoder and decoder', type=int)
+                           help='dimension for ts/event encoder and decoder & size of Embedding vector for Events', type=int)
     argparser.add_argument('--z_dim', default=100,
                            help='dimension for latent variable encoder', type=int)
     argparser.add_argument('--use_GRU', default=True,
                            help='RNN cell type(True:GRU, False:LSTM)', type=bool)
+
+    #Transformer netwrok parameters
+    argparser.add_argument('--d_rnn', default=256,
+                           help='dimension of RNN layer used in Transformer', type=int)
+    argparser.add_argument('--d_inner_hid', default=128,
+                           help='Hidden dimension in positive feed forward layer', type=int)
+    argparser.add_argument('--d_k', default=16,
+                           help='Mk in thedot product Attention', type=int)
+    argparser.add_argument('-d_v', default=16,
+                           help='Mv in thedot product Attention', type=int)
+
+    argparser.add_argument('-n_head', default=4,
+                           help='Number of heads in Multi-head attention', type=int)
+    argparser.add_argument('-n_layers', default=4,
+                           help='Number of Multi-head attention and positive feedforward layers', type=int)
 
     # trainning setting
     argparser.add_argument('--lr', default=0.001, help='learning_rate', type=float)
     argparser.add_argument('--dec_bound', default=0.05, help='dec_bound for std', type=float)
     argparser.add_argument('--batch_size', default=400, help='batch size', type=int)
     argparser.add_argument('--epochs', default=100, help='trainning epochs', type=int)
-    argparser.add_argument('--device', default='cuda:0', help='select device (cuda:0, cpu)', type=str)
+    argparser.add_argument('--device', default='cpu', help='select device (cuda:0, cpu)', type=str)
     argparser.add_argument('--mc_times', default=1000, help='num of monte carlo simulations', type=int)
+    argparser.add_argument('-dropout', default=0.1, help='dropout rate', type=float)
+    argparser.add_argument('-smooth', default=0.1, help='smoothing rate', type=float)
 
     argparser.add_argument('-log',help='log file name of rmse score' , default='log.txt',type=str)
 
@@ -46,10 +65,23 @@ def main():
     dataset = TsEventDataset(data_dict, num_event_type, X_context=args.X_context,
                              y_horizon=args.y_horizon, window_skip=args.window_skip, train_prop=args.train_prop)
     device = torch.device(args.device)
-    model = VSMHN(device, dataset.x_dim, num_event_type + 2, dataset.t_dim, args.h_dim,
-                  args.z_dim, args.y_horizon, dec_bound=args.dec_bound, use_GRU=args.use_GRU).to(device)
+    model = VSMHN(device, dataset.x_dim, 3, dataset.t_dim, args.h_dim,
+                    args.z_dim, args.y_horizon, dec_bound=args.dec_bound, use_GRU=args.use_GRU,
+                    num_types=num_event_type,
+                    d_rnn=args.d_rnn,
+                    d_inner=args.d_inner_hid,
+                    n_layers=args.n_layers,
+                    n_head=args.n_head,
+                    d_k=args.d_k,
+                    d_v=args.d_v,
+                    dropout=args.dropout).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    """ prediction loss function, either cross entropy or label smoothing """
+    if args.smooth > 0:
+        pred_loss_func = Utils.LabelSmoothingLoss(args.smooth, num_event_type, ignore_index=-1)
+    else:
+        pred_loss_func = nn.CrossEntropyLoss(ignore_index=-1, reduction='none')
 
     for epoch in range(args.epochs):
         epoch_i = epoch + 1
@@ -62,8 +94,11 @@ def main():
                 (X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch,
                                                                         y_tf_batch, y_target), end = dataset.next_batch(args.batch_size, train=True)
                 optimizer.zero_grad()
+                # loss_like, loss_kl, loss_Transformer = model(X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device),
+                                        # y_ts_batch.to(device), y_tf_batch.to(device), pred_loss_func)
+                # loss = -loss_like + loss_kl + loss_Transformer
                 loss_like, loss_kl = model(X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device),
-                                        y_ts_batch.to(device), y_tf_batch.to(device))
+                                        y_ts_batch.to(device), y_tf_batch.to(device), pred_loss_func)
                 loss = -loss_like + loss_kl
                 loss.backward()
                 optimizer.step()

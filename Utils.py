@@ -160,7 +160,7 @@ class LabelSmoothingLoss(nn.Module):
         non_pad_mask = target.ne(self.ignore_index).float()
 
         target[target.eq(self.ignore_index)] = 0
-        one_hot = F.one_hot(target, num_classes=self.num_classes).float()
+        one_hot = F.one_hot(target.to(torch.int64), num_classes=self.num_classes).float()
         one_hot = one_hot * (1 - self.eps) + (1 - one_hot) * self.eps / self.num_classes
 
         log_prb = F.log_softmax(output, dim=-1)

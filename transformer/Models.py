@@ -80,6 +80,8 @@ class Encoder(nn.Module):
         slf_attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq).gt(0)
 
         tem_enc = self.temporal_enc(event_time, non_pad_mask)
+        # print(event_type.shape)
+        # print(event_type)
         enc_output = self.event_emb(event_type)
 
         for enc_layer in self.layer_stack:
@@ -122,7 +124,9 @@ class RNN_layers(nn.Module):
         lengths = non_pad_mask.squeeze(2).long().sum(1).cpu()
         pack_enc_output = nn.utils.rnn.pack_padded_sequence(
             data, lengths, batch_first=True, enforce_sorted=False)
+        # print(pack_enc_output.shape)
         temp = self.rnn(pack_enc_output)[0]
+        # print(temp.shape)
         out = nn.utils.rnn.pad_packed_sequence(temp, batch_first=True)[0]
 
         out = self.projection(out)
@@ -185,8 +189,10 @@ class Transformer(nn.Module):
         non_pad_mask = get_non_pad_mask(event_type)
 
         enc_output = self.encoder(event_type, event_time, non_pad_mask)
-        enc_output = self.rnn(enc_output, non_pad_mask)
-
+        # print(enc_output.shape)
+        # enc_output = self.rnn(enc_output, non_pad_mask)
+        # print(enc_output.shape)
+        # print(enc_output.shape)
         time_prediction = self.time_predictor(enc_output, non_pad_mask)
 
         type_prediction = self.type_predictor(enc_output, non_pad_mask)

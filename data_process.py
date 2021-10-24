@@ -10,9 +10,10 @@ import io
 def get_air_quality_data():
     # download multivarite air quality time series data and process it into hetergeneous squences
 
-    data_url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00381/PRSA_data_2010.1.1-2014.12.31.csv"
-    r = requests.get(data_url)
-    data_pd = pd.read_csv(io.StringIO(r.content.decode('utf-8')))[24:].interpolate(axis=0)
+    #data_url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00381/PRSA_data_2010.1.1-2014.12.31.csv"
+    #r = requests.get(data_url)
+    #data_pd = pd.read_csv(io.StringIO(r.content.decode('utf-8')))[24:].interpolate(axis=0)
+    data_pd = pd.read_csv('PRSA_data.csv')[24:].interpolate(axis=0)
     years = np.array(data_pd['year'])
     months = np.array(data_pd['month'])
     days = np.array(data_pd['day'])
@@ -28,10 +29,10 @@ def get_air_quality_data():
     rain_up = rain.reindex(up_index).interpolate()
     # event extraction
     wind_start, wind_drop = convert_wind_to_events(wind_speed_up, top_C=50, start_C=10)
-    wind_start_events = [('wind_start', wind_speed_up.index[i]) for i in wind_start]
-    wind_drop_events = [('wind_drop', wind_speed_up.index[i]) for i in wind_drop]
+    wind_start_events = [(1, wind_speed_up.index[i]) for i in wind_start]
+    wind_drop_events = [(3, wind_speed_up.index[i]) for i in wind_drop]
     rain_start, rain_drop = convert_wind_to_events(rain_up, top_C=1, start_C=0.5)
-    rain_start_events = [('rain_start', rain_up.index[i]) for i in rain_start]
+    rain_start_events = [(2, rain_up.index[i]) for i in rain_start]
     # sorting event based on time
     events = sorted(chain(wind_start_events, wind_drop_events,
                           rain_start_events), key=lambda x: x[1])

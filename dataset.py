@@ -51,10 +51,9 @@ def segment_time_series(data_dict,
     event_tf_norm = time_features_scaler.transform(event_tf)
 
     # ont-hot encoding of event types - converts to 2-d array for one-hot encoding final output is 2-d array with (l_seq x num_types)
-    event_types = np.array([event[0] for event in event_sequence])
-    event_type_encoder = OneHotEncoder().fit(event_types[:, None])
-    event_type_code = event_type_encoder.transform(
-        event_types[:, None]).toarray()
+    event_type_code = np.array([event[0] for event in event_sequence])
+    #event_type_encoder = OneHotEncoder().fit(event_types[:, None])
+    #event_type_code = event_type_encoder.transform(event_types[:, None]).toarray()
 
     # generate time delta features
     timestamps = [event[1] for event in event_sequence]
@@ -67,8 +66,8 @@ def segment_time_series(data_dict,
         zip(*[event_type_code, abs_times, timedeltas]), index=event_time_stamps)
     # counting intenisty function
     intensities = []
-    for i in range(num_types):
-        time_sequence = [event[1] for event in event_pd if event[0][i] == 1]
+    for i in range(1,1+num_types):
+        time_sequence = [event[1] for event in event_pd if event[0] == i]
         intensity = np.sum([stat.norm(time, sampling_delta_norm).pdf(
             tf_pd['abs_time']) for time in time_sequence], axis=0)  #pdf(tf_pd) from normal distribution with mean=time and variance=sampling_delta_norm
         intensities.append(intensity)
@@ -161,7 +160,7 @@ class TsEventDataset(Dataset):
             transition_delta = transition_time - X_tf[0, 0]
 
         transition_array = np.array(
-            [0 for i in range(self.num_types)]+[transition_time, transition_delta])[None, :]
+            [0]+[transition_time, transition_delta])[None, :]
         if X_event_array.size == 0:
             X_event_array = transition_array
         else:
