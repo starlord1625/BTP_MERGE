@@ -234,8 +234,8 @@ class VSMHN(nn.Module):
         # SE is usually large, scale it to stabilize training
         scale_time_loss = 100
         loss_Transformer = event_loss + pred_loss + se / scale_time_loss
-        # return torch.mean(torch.sum(likelihoods, (-1, -2))), kls.mean(), loss_Transformer
-        return torch.mean(torch.sum(likelihoods, (-1, -2))), kls.mean()
+        return torch.mean(torch.sum(likelihoods, (-1, -2))), kls.mean(), loss_Transformer
+        #return torch.mean(torch.sum(likelihoods, (-1, -2))), kls.mean()
 
 
 def predict(model, ts_past, event_past, ts_tf_past, tf_future, mc_times=100):

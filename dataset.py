@@ -5,7 +5,7 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, MinMaxScaler
 import random
 import scipy.stats as stat
-
+from collections import Counter
 
 def generate_time_features(timestamps, features):
     time_features = []
@@ -76,6 +76,8 @@ def segment_time_series(data_dict,
         [intensity for intensity in intensities], index=tf_pd.index)
     # generate data pairs
     data_pairs = []
+    # events_len_X = []
+    # events_len_y = []
     for idx in range(0, time_series.shape[0]-X_context-y_horizon, window_skip):
         pair_dict = {}
         pair_dict['X_ts'] = time_series_norm[idx:idx+X_context]
@@ -90,7 +92,16 @@ def segment_time_series(data_dict,
         pair_dict['X_intensity'] = intensity_pd[idx:idx+X_context]
         pair_dict['y_intensity'] = intensity_pd[idx + X_context:idx+X_context+y_horizon]
         data_pairs.append(pair_dict)
-
+        # events_len_X.append(pair_dict['X_events'].shape[0])
+        # events_len_y.append(pair_dict['y_events'].shape[0])
+    # print("events_len_X",len(events_len_X))
+    # print(Counter(events_len_X))
+    # print("events_len_y",len(events_len_X))
+    # print(Counter(events_len_y))
+    print("count:",len(data_pairs))
+    f = open("logging_count.txt",'a')
+    f.write('{len_data_pairs}\n'.format(len_data_pairs=len(data_pairs)))
+    f.close()
     dataset = {}
     dataset['data_pairs'] = data_pairs
     dataset['time_series_scaler'] = time_series_scaler
@@ -192,7 +203,7 @@ class TsEventDataset(Dataset):
                 end_cursor = len(self.dataset['data_pairs'])
                 end = True
             indexs = range(self.test_cursor, end_cursor)
-            self.test_cursor = end_cursor
+            #self.test_cursor = end_cursor
         (X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch, y_tf_batch, y_intensity_batch) = self._get_batch(indexs)
         return (X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch, y_tf_batch, y_intensity_batch), end
 
@@ -224,3 +235,13 @@ class TsEventDataset(Dataset):
         X_intensity_batch = torch.Tensor(np.stack(X_intensity_batch, axis=0))
         y_intensity_batch = torch.Tensor(np.stack(y_intensity_batch, axis=0))
         return (X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch, y_tf_batch, y_intensity_batch)
+
+    def _get_indexs(self,start,end):
+        end_cursor = len(self.dataset['data_pairs'])
+        indexs = []
+        for idx in range(self.test_cursor, end_cursor):
+            data_pair = self.dataset['data_pairs'][idx]
+            X_events= np.array(data_pair['X_events'])
+            if X_events.shape[0] >= start and X_events.shape[0] <= end :
+                indexs.append(idx)
+        return indexs

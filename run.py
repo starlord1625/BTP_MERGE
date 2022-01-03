@@ -35,12 +35,12 @@ def main():
                            help='Hidden dimension in positive feed forward layer', type=int)
     argparser.add_argument('--d_k', default=16,
                            help='Mk in thedot product Attention', type=int)
-    argparser.add_argument('-d_v', default=16,
+    argparser.add_argument('--d_v', default=16,
                            help='Mv in thedot product Attention', type=int)
 
-    argparser.add_argument('-n_head', default=4,
+    argparser.add_argument('--n_head', default=4,
                            help='Number of heads in Multi-head attention', type=int)
-    argparser.add_argument('-n_layers', default=4,
+    argparser.add_argument('--n_layers', default=4,
                            help='Number of Multi-head attention and positive feedforward layers', type=int)
 
     # trainning setting
@@ -50,10 +50,12 @@ def main():
     argparser.add_argument('--epochs', default=100, help='trainning epochs', type=int)
     argparser.add_argument('--device', default='cpu', help='select device (cuda:0, cpu)', type=str)
     argparser.add_argument('--mc_times', default=1000, help='num of monte carlo simulations', type=int)
-    argparser.add_argument('-dropout', default=0.1, help='dropout rate', type=float)
-    argparser.add_argument('-smooth', default=0.1, help='smoothing rate', type=float)
+    argparser.add_argument('--dropout', default=0.1, help='dropout rate', type=float)
+    argparser.add_argument('--smooth', default=0.1, help='smoothing rate', type=float)
 
-    argparser.add_argument('-log',help='log file name of rmse score' , default='log.txt',type=str)
+    argparser.add_argument('--event_start',help='start  for error analysis' , default=0,type=int)
+    argparser.add_argument('--event_stop',help='stop  for error analysis' , default=200,type=int)
+    argparser.add_argument('--log',help='log file name of rmse score' , default='log.txt',type=str)
 
     args = argparser.parse_args()
 
@@ -76,7 +78,7 @@ def main():
                     d_v=args.d_v,
                     dropout=args.dropout).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-
+    #exit(-1)
     """ prediction loss function, either cross entropy or label smoothing """
     if args.smooth > 0:
         pred_loss_func = Utils.LabelSmoothingLoss(args.smooth, num_event_type, ignore_index=-1)
@@ -88,52 +90,84 @@ def main():
         print('[ Epoch', epoch_i, ']')
         dataset.train_shuffle()
         print('Training:')
+        pre_loss = 0
         while True:
             end = False
-            for batch_loop in tqdm(range(int(((data_dict['time_series'].shape[0]-args.X_context-args.y_horizon)/args.window_skip)*args.train_prop/args.batch_size)),desc='  - (Training)   ', leave=False):
+            for batch_loop in tqdm(range(int((dataset.__len__()*args.train_prop+args.batch_size-1)/args.batch_size)),desc='  - (Training)   ', leave=False):
                 (X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch,
                                                                         y_tf_batch, y_target), end = dataset.next_batch(args.batch_size, train=True)
                 optimizer.zero_grad()
-                # loss_like, loss_kl, loss_Transformer = model(X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device),
-                                        # y_ts_batch.to(device), y_tf_batch.to(device), pred_loss_func)
-                # loss = -loss_like + loss_kl + loss_Transformer
-                loss_like, loss_kl = model(X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device),
+                loss_like, loss_kl, loss_Transformer = model(X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device),
                                         y_ts_batch.to(device), y_tf_batch.to(device), pred_loss_func)
-                loss = -loss_like + loss_kl
+                loss = -loss_like + loss_kl + loss_Transformer
+                #loss_like, loss_kl = model(X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device),
+                                        #y_ts_batch.to(device), y_tf_batch.to(device), pred_loss_func)
+                #loss = -loss_like + loss_kl
+                pre_loss += loss.detach().numpy()
                 loss.backward()
                 optimizer.step()
                 if end:
                     break
             if end:
                 break
+        pre_loss /= int((dataset.__len__()*args.train_prop+args.batch_size-1)/args.batch_size)
         print('Testing:')
         dataset.test_shuffle()
         (X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch, y_tf_batch, y_target), end = dataset.next_batch(100000, train=False)
-        indexs = range(-60, 0, 2)
-        (X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch, y_tf_batch, y_target) = dataset._get_batch(indexs)
+        #indexs = range(-60, 0, 2)
+        #(X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch, y_tf_batch, y_target) = dataset._get_batch(indexs)
         ts_past, _, _, _, _ = X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device), y_ts_batch.to(device), y_tf_batch.to(device)
         preds = predict(model, X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device),  y_tf_batch.to(device), mc_times=args.mc_times)
         (y_ts_batch, y_tf_batch, y_target) = [x.numpy() for x in (y_ts_batch, y_tf_batch, y_target)]
-        preds_ori = dataset.dataset['time_series_scaler'].inverse_transform(preds.reshape(-1, 720, 4).reshape(-1, 4)).reshape(-1, 720, 4)
+        num = X_ts_batch.shape[0] * args.y_horizon
+        preds_ori = dataset.dataset['time_series_scaler'].inverse_transform(preds.reshape(-1, num, 4).reshape(-1, 4)).reshape(-1, num, 4)
         ts_ori = dataset.dataset['time_series_scaler'].inverse_transform(y_ts_batch.reshape(-1, 4))
         rmse = RMSE(ts_ori, preds_ori.mean(axis=0))
         crps = calc_crps(ts_ori, preds_ori.mean(axis=0), preds_ori.std(axis=0)).mean(axis=0)
-        print(f"RMSE scores: {rmse} CRPS scores: {crps}")
+        print(f"RMSE scores: {rmse} CRPS scores: {crps} loss: {pre_loss}" )
 
         if epoch_i == 1:
             valid_rmse = rmse.reshape(1,-1)
             valid_crps = crps.reshape(1,-1)
+            valid_loss = pre_loss
         else:
             valid_rmse = np.append(valid_rmse, rmse.reshape(1,-1),axis=0)
             valid_crps = np.append(valid_crps,crps.reshape(1,-1),axis=0)
+            valid_loss = np.append(valid_loss,pre_loss)
         print('minimum:')
-        print(f"RMSE scores: {np.amin(valid_rmse,axis=0)} CRPS scores: {np.amin(valid_crps,axis=0)}")
+        print(f"RMSE scores: {np.amin(valid_rmse,axis=0)} CRPS scores: {np.amin(valid_crps,axis=0)} loss: {valid_loss.min()} loss min @epoch: {valid_loss.argmin()+1}")
 
         # logging
         with open(args.log, 'a') as f:
-            f.write('{epoch}, {rmse}, {crps} \n'
-                    .format(epoch=epoch_i, rmse=rmse, crps=crps))
-        
+            f.write('{epoch},{rmse},{crps},{loss},{min_loss},{min_loss_epoch}\n'
+                    .format(epoch=epoch_i, rmse=rmse, crps=crps,loss=pre_loss,min_loss=valid_loss.min(),min_loss_epoch=valid_loss.argmin()+1))
+        '''
+        #Error analysis
+        for a,b in zip([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,0],[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,15]):
+            indexs = dataset._get_indexs(start=a,end=b)
+            print(f"start_seq_len: {a} end_seq_len: {b} len: {len(indexs)}")
+            if len(indexs) == 0:
+                continue
+            (X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch, y_tf_batch, y_target) = dataset._get_batch(indexs)
+            #print(X_ts_batch.shape)
+            ts_past, _, _, _, _ = X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device), y_ts_batch.to(device), y_tf_batch.to(device)
+            preds = predict(model, X_ts_batch.to(device), X_event_batch.to(device), X_tf_batch.to(device),  y_tf_batch.to(device), mc_times=args.mc_times)
+            #print(preds.shape)
+            (y_ts_batch, y_tf_batch, y_target) = [x.numpy() for x in (y_ts_batch, y_tf_batch, y_target)]
+            num = X_ts_batch.shape[0] * args.y_horizon 
+            preds_ori = dataset.dataset['time_series_scaler'].inverse_transform(preds.reshape(-1, num, 4).reshape(-1, 4)).reshape(-1, num, 4)
+            ts_ori = dataset.dataset['time_series_scaler'].inverse_transform(y_ts_batch.reshape(-1, 4))
+            rmse = RMSE(ts_ori, preds_ori.mean(axis=0))
+            crps = calc_crps(ts_ori, preds_ori.mean(axis=0), preds_ori.std(axis=0)).mean(axis=0)
+            #print(f"RMSE scores: {rmse} CRPS scores: {crps} loss: {pre_loss}")
+            #print('minimum:')
+            #print(f"RMSE scores: {np.amin(valid_rmse,axis=0)} CRPS scores: {np.amin(valid_crps,axis=0)} loss: {valid_loss.min()} loss min @epoch: {valid_loss.argmin()+1}")
+
+            # logging
+            with open("error_analysis.txt", 'a') as f:
+                f.write('start_seq_len: {a} end_seq_len: {b} len: {z}\n{epoch},{rmse},{crps},{loss},{min_loss},{min_loss_epoch}\n'
+                        .format(a=a, b=b, z=len(indexs), epoch=epoch_i, rmse=rmse, crps=crps,loss=pre_loss,min_loss=valid_loss.min(),min_loss_epoch=valid_loss.argmin()+1))
+        '''
     dataset.test_shuffle()
     (X_ts_batch, X_tf_batch, X_event_batch, X_event_arrays), (y_ts_batch, y_tf_batch, y_target), end = dataset.next_batch(100000, train=False)
     print('Forecasting and Plotting:')

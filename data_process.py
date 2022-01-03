@@ -10,10 +10,12 @@ import io
 def get_air_quality_data():
     # download multivarite air quality time series data and process it into hetergeneous squences
 
-    #data_url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00381/PRSA_data_2010.1.1-2014.12.31.csv"
-    #r = requests.get(data_url)
-    #data_pd = pd.read_csv(io.StringIO(r.content.decode('utf-8')))[24:].interpolate(axis=0)
-    data_pd = pd.read_csv('PRSA_data.csv')[24:].interpolate(axis=0)
+    try :
+        data_url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00381/PRSA_data_2010.1.1-2014.12.31.csv"
+        r = requests.get(data_url)
+        data_pd = pd.read_csv(io.StringIO(r.content.decode('utf-8')))[24:].interpolate(axis=0)
+    except Exception:
+        data_pd = pd.read_csv('PRSA_data.csv')[24:].interpolate(axis=0)
     years = np.array(data_pd['year'])
     months = np.array(data_pd['month'])
     days = np.array(data_pd['day'])

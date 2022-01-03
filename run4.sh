@@ -1,0 +1,2 @@
+python run.py --train_prop 0.9 --h_dim 100 --z_dim 50 --batch_size 400 --epochs 100 --device cpu --log 'log_new_90_mean_batch_Transformer_loss.txt'
+python run.py --train_prop 0.97 --h_dim 100 --z_dim 50 --batch_size 400 --epochs 100 --device cpu --log 'log_new_97_mean_batch_Transformer_loss.txt'
